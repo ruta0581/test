@@ -2,131 +2,57 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8">
-  <title>WebRTC ゲームパッドクライアント</title>
-  <style>
-    body { font-family: sans-serif; text-align: center; background: #f4f7fa; }
-    #status { margin-top: 10px; font-size: 1.2em; }
-  </style>
+  <title>WebRTC DataChannel Test</title>
 </head>
 <body>
-  <h2>WebRTC ゲームパッド送信</h2>
-  <div>
-    <label>名前: <input type="text" id="uname" required></label>
-    <label>WSSサーバー: <input type="text" id="wssurl" value="wss://your-server/ws" required></label>
-    <button id="connectbtn">接続</button>
-  </div>
-  <div id="status">未接続</div>
+  <h2>WebRTC DataChannel クライアント</h2>
+  <button id="sendBtn">DataChannelで送信</button>
+  <pre id="log"></pre>
   <script>
-    let padIndex = null;
-    let dataChannel = null;
-    let pc = null;
-    let ws = null;
-    let pendingMessages = [];
+    let ws, pc, dataChannel;
 
-    document.getElementById("connectbtn").onclick = () => {
-      navigator.getGamepads(); // 初期化呼び出し
-      window.addEventListener("gamepadconnected", (e) => {
-        padIndex = e.gamepad.index;
-        connectSignaling();
-      });
-      document.getElementById("status").textContent = "ゲームパッド接続を待機中...";
+    function log(msg) {
+      document.getElementById('log').textContent += msg + '\n';
+    }
+
+    ws = new WebSocket("ws://localhost:8080/ws");
+
+    ws.onmessage = async (event) => {
+      const msg = JSON.parse(event.data);
+
+      if (msg.type === "offer") {
+        pc = new RTCPeerConnection();
+        pc.onicecandidate = e => {
+          if (e.candidate) {
+            ws.send(JSON.stringify({ type: "candidate", candidate: e.candidate }));
+          }
+        };
+
+        pc.ondatachannel = e => {
+          dataChannel = e.channel;
+          dataChannel.onopen = () => {
+            log('DataChannel open!');
+          };
+          dataChannel.onmessage = (ev) => {
+            log("サーバから受信: " + ev.data);
+          };
+        };
+
+        await pc.setRemoteDescription(msg.offer);
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        ws.send(JSON.stringify({ type: "answer", answer }));
+      } else if (msg.type === "candidate" && pc) {
+        await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+      }
     };
 
-    function connectSignaling() {
-      const uname = document.getElementById("uname").value.trim();
-      const wssurl = document.getElementById("wssurl").value.trim();
-      ws = new WebSocket(wssurl);
-
-      ws.onopen = () => {
-        // 送信保留メッセージを処理
-        pendingMessages.forEach((msg) => ws.send(JSON.stringify(msg)));
-        pendingMessages = [];
-      };
-
-      ws.onmessage = async (event) => {
-        const msg = JSON.parse(event.data);
-        if (msg.type === "offer") {
-          pc = new RTCPeerConnection();
-
-          pc.onicecandidate = (e) => {
-            if (e.candidate) {
-              const cand = { type: "candidate", candidate: e.candidate };
-              if (ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify(cand));
-              } else {
-                pendingMessages.push(cand);
-              }
-            }
-          };
-
-          pc.ondatachannel = (e) => {
-            dataChannel = e.channel;
-            dataChannel.binaryType = "arraybuffer";
-            dataChannel.onopen = () => {
-              document.getElementById("status").textContent = "送信中...";
-              startSendingLoop();
-            };
-          };
-
-          await pc.setRemoteDescription(msg.offer);
-          const answer = await pc.createAnswer();
-          await pc.setLocalDescription(answer);
-
-          const answerMsg = { type: "answer", answer };
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify(answerMsg));
-          } else {
-            pendingMessages.push(answerMsg);
-          }
-        } else if (msg.type === "candidate") {
-          await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
-        }
-      };
-    }
-
-    function encodeGamepad(pad) {
-      let btnBits = 0;
-      for (let i = 0; i < 16; i++) {
-        if (pad.buttons[i]?.pressed) btnBits |= (1 << i);
+    document.getElementById('sendBtn').onclick = () => {
+      if (dataChannel && dataChannel.readyState === "open") {
+        dataChannel.send("こんにちは、サーバ！");
+        log("クライアント→サーバへ送信: こんにちは、サーバ！");
       }
-      const axes = [];
-      for (let i = 0; i < 4; i++) {
-        let v = Math.round((pad.axes[i] ?? 0) * 127);
-        v = Math.max(-128, Math.min(127, v));
-        axes.push(v);
-      }
-      let lt = 0, rt = 0;
-      if (pad.buttons[6]) lt = Math.round((pad.buttons[6].value ?? 0) * 255);
-      if (pad.buttons[7]) rt = Math.round((pad.buttons[7].value ?? 0) * 255);
-
-      const buf = new Uint8Array(8);
-      buf[0] = btnBits & 0xFF;
-      buf[1] = (btnBits >> 8) & 0xFF;
-      buf[2] = axes[0] & 0xFF;
-      buf[3] = axes[1] & 0xFF;
-      buf[4] = axes[2] & 0xFF;
-      buf[5] = axes[3] & 0xFF;
-      buf[6] = lt & 0xFF;
-      buf[7] = rt & 0xFF;
-      return buf;
-    }
-
-    function startSendingLoop() {
-      let prev = null;
-      function loop() {
-        const pad = navigator.getGamepads()[padIndex];
-        if (pad && dataChannel && dataChannel.readyState === "open") {
-          const buf = encodeGamepad(pad);
-          let diff = !prev || buf.some((v, i) => v !== prev[i]);
-          if (diff) {
-            dataChannel.send(buf);
-            prev = buf;
-          }
-        }
-        requestAnimationFrame(loop);
-      }
-      loop();
-    }
+    };
   </script>
 </body>
 </html>
