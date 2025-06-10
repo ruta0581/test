@@ -1,51 +1,110 @@
 <!DOCTYPE html>
-<html>
+<html lang="ja">
 <head>
-  <title>WebRTC Gamepad Sender</title>
+  <meta charset="utf-8">
+  <title>WebRTC ゲームパッドクライアント</title>
+  <style>
+    body { font-family: sans-serif; text-align: center; background: #f4f7fa; }
+    #status { margin-top: 10px; font-size: 1.2em; }
+  </style>
 </head>
 <body>
-  <h1>Gamepad Sender</h1>
-  <button onclick="connect()">Connect</button>
-
+  <h2>WebRTC ゲームパッド送信</h2>
+  <div>
+    <label>名前: <input type="text" id="uname" required></label>
+    <label>WSSサーバー: <input type="text" id="wssurl" value="wss://your-server/ws" required></label>
+    <button id="connectbtn">接続</button>
+  </div>
+  <div id="status">未接続</div>
   <script>
-    let pc, dc, ws;
+    let padIndex = null;
+    let dataChannel = null;
+    let pc = null;
+    let ws = null;
 
-    async function connect() {
-      ws = new WebSocket("ws://192.168.1.125:8080");
-      pc = new RTCPeerConnection({
-        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+    document.getElementById("connectbtn").onclick = () => {
+      navigator.getGamepads(); // 初期化呼び出し
+      window.addEventListener("gamepadconnected", (e) => {
+        padIndex = e.gamepad.index;
+        connectSignaling();
       });
+      document.getElementById("status").textContent = "ゲームパッド接続を待機中...";
+    };
 
-      dc = pc.createDataChannel("gamepad");
+    function connectSignaling() {
+      const uname = document.getElementById("uname").value.trim();
+      const wssurl = document.getElementById("wssurl").value.trim();
+      ws = new WebSocket(wssurl);
 
-      ws.onmessage = async (msg) => {
-        const data = JSON.parse(msg.data);
-        if (data.type === 'answer') {
-          await pc.setRemoteDescription(data);
-        } else if (data.type === 'candidate') {
-          await pc.addIceCandidate(data.candidate);
+      ws.onmessage = async (event) => {
+        const msg = JSON.parse(event.data);
+        if (msg.type === "offer") {
+          pc = new RTCPeerConnection();
+          pc.onicecandidate = e => {
+            if (e.candidate) {
+              ws.send(JSON.stringify({ type: "candidate", candidate: e.candidate }));
+            }
+          };
+          pc.ondatachannel = e => {
+            dataChannel = e.channel;
+            dataChannel.binaryType = "arraybuffer";
+            dataChannel.onopen = () => {
+              document.getElementById("status").textContent = "送信中...";
+              startSendingLoop();
+            };
+          };
+          await pc.setRemoteDescription(msg.offer);
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          ws.send(JSON.stringify({ type: "answer", answer }));
+        } else if (msg.type === "candidate") {
+          await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
         }
       };
+    }
 
-      pc.onicecandidate = event => {
-        if (event.candidate) {
-          ws.send(JSON.stringify({ type: 'candidate', candidate: event.candidate }));
+    function encodeGamepad(pad) {
+      let btnBits = 0;
+      for (let i = 0; i < 16; i++) {
+        if (pad.buttons[i]?.pressed) btnBits |= (1 << i);
+      }
+      const axes = [];
+      for (let i = 0; i < 4; i++) {
+        let v = Math.round((pad.axes[i] ?? 0) * 127);
+        v = Math.max(-128, Math.min(127, v));
+        axes.push(v);
+      }
+      let lt = 0, rt = 0;
+      if (pad.buttons[6]) lt = Math.round((pad.buttons[6].value ?? 0) * 255);
+      if (pad.buttons[7]) rt = Math.round((pad.buttons[7].value ?? 0) * 255);
+
+      const buf = new Uint8Array(8);
+      buf[0] = btnBits & 0xFF;
+      buf[1] = (btnBits >> 8) & 0xFF;
+      buf[2] = axes[0] & 0xFF;
+      buf[3] = axes[1] & 0xFF;
+      buf[4] = axes[2] & 0xFF;
+      buf[5] = axes[3] & 0xFF;
+      buf[6] = lt & 0xFF;
+      buf[7] = rt & 0xFF;
+      return buf;
+    }
+
+    function startSendingLoop() {
+      let prev = null;
+      function loop() {
+        const pad = navigator.getGamepads()[padIndex];
+        if (pad && dataChannel && dataChannel.readyState === "open") {
+          const buf = encodeGamepad(pad);
+          let diff = !prev || buf.some((v, i) => v !== prev[i]);
+          if (diff) {
+            dataChannel.send(buf);
+            prev = buf;
+          }
         }
-      };
-
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      ws.onopen = () => ws.send(JSON.stringify(offer));
-
-      setInterval(() => {
-        const gp = navigator.getGamepads()[0];
-        if (gp && dc.readyState === "open") {
-          dc.send(JSON.stringify({
-            buttons: gp.buttons.map(b => b.pressed),
-            axes: gp.axes
-          }));
-        }
-      }, 50);
+        requestAnimationFrame(loop);
+      }
+      loop();
     }
   </script>
 </body>
