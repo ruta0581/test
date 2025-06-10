@@ -160,11 +160,12 @@
         if (pad.buttons[i]?.pressed) btnBits |= (1 << i);
       }
       const axes = [];
-      for (let i = 0; i < 4; i++) {
-        let v = Math.round((pad.axes[i] ?? 0) * 127);
-        v = Math.max(-128, Math.min(127, v));
-        axes.push(v);
-      }
+for (let i = 0; i < 4; i++) {
+  let v = Math.round((pad.axes[i] ?? 0) * 127.5 + 128);
+  v = Math.max(0, Math.min(255, v));
+  axes.push(v);
+}
+
       let lt = 0, rt = 0;
       if (pad.buttons[6]) lt = Math.round((pad.buttons[6].value ?? 0) * 255);
       else if (pad.axes[4] !== undefined) lt = Math.round(((pad.axes[4] + 1) / 2) * 255);
