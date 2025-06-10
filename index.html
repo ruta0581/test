@@ -21,6 +21,7 @@
     let dataChannel = null;
     let pc = null;
     let ws = null;
+    let pendingMessages = [];
 
     document.getElementById("connectbtn").onclick = () => {
       navigator.getGamepads(); // 初期化呼び出し
@@ -36,16 +37,29 @@
       const wssurl = document.getElementById("wssurl").value.trim();
       ws = new WebSocket(wssurl);
 
+      ws.onopen = () => {
+        // 送信保留メッセージを処理
+        pendingMessages.forEach((msg) => ws.send(JSON.stringify(msg)));
+        pendingMessages = [];
+      };
+
       ws.onmessage = async (event) => {
         const msg = JSON.parse(event.data);
         if (msg.type === "offer") {
           pc = new RTCPeerConnection();
-          pc.onicecandidate = e => {
+
+          pc.onicecandidate = (e) => {
             if (e.candidate) {
-              ws.send(JSON.stringify({ type: "candidate", candidate: e.candidate }));
+              const cand = { type: "candidate", candidate: e.candidate };
+              if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify(cand));
+              } else {
+                pendingMessages.push(cand);
+              }
             }
           };
-          pc.ondatachannel = e => {
+
+          pc.ondatachannel = (e) => {
             dataChannel = e.channel;
             dataChannel.binaryType = "arraybuffer";
             dataChannel.onopen = () => {
@@ -53,10 +67,17 @@
               startSendingLoop();
             };
           };
+
           await pc.setRemoteDescription(msg.offer);
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
-          ws.send(JSON.stringify({ type: "answer", answer }));
+
+          const answerMsg = { type: "answer", answer };
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify(answerMsg));
+          } else {
+            pendingMessages.push(answerMsg);
+          }
         } else if (msg.type === "candidate") {
           await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
         }
