@@ -205,7 +205,7 @@
             if (buf[i] !== prev[i]) { diff = true; break; }
           }
           if (diff) {
-            dataChannel.send(buf);
+            dataChannel.send(buf.buffer);
             prev = buf;
             setStatus('送信中:');
           }
