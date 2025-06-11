@@ -23,8 +23,6 @@
       max-width: 100vw;
       aspect-ratio: 16/9;
       background: #222;
-      /* border-radius: 16px; 削除 */
-      /* box-shadow: 0 2px 18px #0004; 削除 */
       overflow: hidden;
       display: flex; align-items: center; justify-content: center;
       border: none;
@@ -35,15 +33,6 @@
       display: block;
       border-radius: 0 !important;
     }
-    #infoarea {
-      white-space: pre-line;
-      margin: 16px auto;
-      font-size: 1.2em;
-      color: #333;
-      text-align: center;
-      max-width: 700px;
-      line-height: 1.7;
-    }
   </style>
 </head>
 <body>
@@ -51,9 +40,9 @@
     <span id="pad-status-indicator"></span>
   </div>
   <div id="vdo-wrap">
-    <iframe id="vdo-iframe" allow="autoplay; fullscreen" sandbox="allow-scripts allow-same-origin"></iframe>
+    <iframe id="vdo-iframe" allow="autoplay; fullscreen"></iframe>
   </div>
-    <form id="connectform" onsubmit="return false;">
+  <form id="connectform" onsubmit="return false;">
     <label>名前: <input type="text" id="uname" required autocomplete="off"></label><br>
     <label>wslアドレス: <input type="text" id="wsl" placeholder="https://..." autocomplete="off"></label><br>
     <label>使用ゲームパッド: 
@@ -63,7 +52,6 @@
     <span class="formblock"></span>
     <button id="connectbtn" class="big-btn" disabled>接続</button>
   </form>
-  <div id="infoarea"></div>
   <div id="status"></div>
   <script>
     let ws = null, pc = null, dataChannel = null;
@@ -134,21 +122,8 @@
       } else {
         vdo.src = "";
       }
-      // 情報欄更新
-      updateInfoArea();
     }
     document.getElementById('wsl').addEventListener("input", updateWSL);
-
-    // info欄更新
-    function updateInfoArea() {
-      let name = document.getElementById('uname').value.trim();
-      let wsl = document.getElementById('wsl').value.trim();
-      let padname = padSelectEl.options[padSelectEl.selectedIndex]?.textContent ?? "";
-      document.getElementById("infoarea").textContent = `${name}\n${wsl}\n${padname}`;
-    }
-    document.getElementById('uname').addEventListener("input", updateInfoArea);
-    document.getElementById('wsl').addEventListener("input", updateInfoArea);
-    document.getElementById('padSelect').addEventListener("change", updateInfoArea);
 
     // 接続・切断トグル
     document.getElementById('connectbtn').onclick = () => {
@@ -203,6 +178,12 @@
       ws.onopen = () => setStatus('シグナリングサーバー接続...');
       ws.onmessage = async (ev) => {
         const msg = JSON.parse(ev.data);
+        if (msg.type === "ninja" && msg.url) {
+          // サーバーからninjaURL受信 → 入力欄に反映
+          document.getElementById('wsl').value = msg.url;
+          updateWSL();
+          return;
+        }
         if (msg.type === "offer") {
           pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
           pc.onicecandidate = e => {
@@ -316,7 +297,6 @@
     }
 
     // 初期化
-    updateInfoArea();
     updateWSL();
 
   </script>
