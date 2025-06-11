@@ -138,6 +138,7 @@
         setStatus('切断しました');
         updatePadIndicator(false);
         refreshPadList();
+        document.getElementById("vdo-iframe").src = "";
         return;
       }
       connecting = true;
