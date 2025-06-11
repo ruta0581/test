@@ -42,16 +42,34 @@
   <div id="vdo-wrap">
     <iframe id="vdo-iframe" allow="autoplay; fullscreen"></iframe>
   </div>
-  <form id="connectform" onsubmit="return false;">
-    <label>名前: <input type="text" id="uname" required autocomplete="off"></label><br>
-    <label>wslアドレス: <input type="text" id="wsl" placeholder="https://..." autocomplete="off"></label><br>
-    <label>使用ゲームパッド: 
-      <select id="padSelect"></select>
-    </label>
-    <button type="button" id="refreshPad">再検出</button>
-    <span class="formblock"></span>
-    <button id="connectbtn" class="big-btn" disabled>接続</button>
-  </form>
+<form id="connectform" onsubmit="return false;">
+  <div style="display: table; margin: 0 auto;">
+    <div style="display: table-row;">
+      <label style="display: table-cell; padding: 6px 10px; text-align:right;">名前:</label>
+      <div style="display: table-cell;">
+        <input type="text" id="uname" required autocomplete="off" style="width: 24em; max-width: 90vw;">
+      </div>
+    </div>
+    <div style="display: table-row;">
+      <label style="display: table-cell; padding: 6px 10px; text-align:right;">wslアドレス:</label>
+      <div style="display: table-cell;">
+        <input type="text" id="wsl" placeholder="https://..." autocomplete="off" style="width: 24em; max-width: 90vw;">
+      </div>
+    </div>
+    <div style="display: table-row;">
+      <label style="display: table-cell; padding: 6px 10px; text-align:right;">使用ゲームパッド:</label>
+      <div style="display: table-cell;">
+        <div style="display: flex; align-items: center; min-width: 12em;">
+          <select id="padSelect" style="min-width: 10em; max-width: 20em;"></select>
+          <button type="button" id="refreshPad" style="margin-left:8px;">再検出</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <span class="formblock"></span>
+  <button id="connectbtn" class="big-btn" disabled>接続</button>
+</form>
+
   <div id="status"></div>
   <script>
     let ws = null, pc = null, dataChannel = null;
