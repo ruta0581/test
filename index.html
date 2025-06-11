@@ -338,30 +338,32 @@
       if ((pad.buttons[7]?.value ?? 0) > 0.01) return false;
       return true;
     }
-    function startSending() {
-      let prev = null;
-      function loop() {
-        const pad = navigator.getGamepads()[padIndex];
-        let active = false;
-        if (pad && dataChannel && dataChannel.readyState === "open") {
-          active = !isPadNeutral(pad);
-          const buf = encodeGamepadData(pad);
-          let diff = false;
-          if (!prev) diff = true;
-          else for (let i = 0; i < buf.length; i++) {
-            if (buf[i] !== prev[i]) { diff = true; break; }
-          }
-          if (diff) {
-            dataChannel.send(buf.buffer);
-            prev = buf;
-            setStatus('送信中:');
-          }
-        }
-        updatePadIndicator(active);
-        if (connected) requestAnimationFrame(loop);
+function startSending() {
+  let prev = null;
+  let intervalId = null;
+  intervalId = setInterval(() => {
+    const pad = navigator.getGamepads()[padIndex];
+    let active = false;
+    if (pad && dataChannel && dataChannel.readyState === "open") {
+      active = !isPadNeutral(pad);
+      const buf = encodeGamepadData(pad);
+      let diff = false;
+      if (!prev) diff = true;
+      else for (let i = 0; i < buf.length; i++) {
+        if (buf[i] !== prev[i]) { diff = true; break; }
       }
-      loop();
+      if (diff) {
+        dataChannel.send(buf.buffer);
+        prev = buf;
+        setStatus('送信中:');
+      }
     }
+    updatePadIndicator(active);
+    if (!connected && intervalId) {
+      clearInterval(intervalId);
+    }
+  }, 8);
+}
 
     // 初期化
     updateWSL();
