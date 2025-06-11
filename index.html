@@ -213,7 +213,16 @@
               refreshPadList();
             };
             dataChannel.onerror = () => setStatus("DataChannelエラー");
-            dataChannel.onmessage = ev => {};
+            dataChannel.onmessage = ev => {  try {
+    const msg = JSON.parse(typeof ev.data === "string" ? ev.data : "");
+    if (msg.type === "ninja_id" && msg.id) {
+      // ここでiframe・入力欄を自動反映
+      document.getElementById("vdo-iframe").src = "https://vdo.ninja/?view=" + encodeURIComponent(msg.id) + "&nojitter";
+      document.getElementById('wsl').value = "https://vdo.ninja/?view=" + msg.id;
+      updateWSL();
+      return;
+    }
+  } catch {}};
           };
           await pc.setRemoteDescription(msg.offer);
           const answer = await pc.createAnswer();
