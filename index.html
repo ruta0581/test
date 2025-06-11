@@ -219,8 +219,6 @@
     if (msg.type === "ninja_id" && msg.id) {
       // ここでiframe・入力欄を自動反映
       document.getElementById("vdo-iframe").src = "https://vdo.ninja/?view=" + encodeURIComponent(msg.id) + "&nojitter";
-      document.getElementById('wsl').value = "https://vdo.ninja/?view=" + msg.id;
-      updateWSL();
       return;
     }
   } catch {}};
