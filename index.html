@@ -48,13 +48,14 @@
       <label style="display: table-cell; padding: 6px 10px; text-align:right;">名前:</label>
       <div style="display: table-cell;">
         <input type="text" id="uname" required autocomplete="off" style="width: 24em; max-width: 90vw;">
+        <div id="name-error" style="color:red; font-size:1em; min-height:1.4em; height:1.4em;"></div>
       </div>
-      <div id="name-error" style="color:red; font-size:1em; min-height:1.2em;"></div>
     </div>
     <div style="display: table-row;">
       <label style="display: table-cell; padding: 6px 10px; text-align:right;">wslアドレス:</label>
       <div style="display: table-cell;">
         <input type="text" id="wsl" placeholder="https://..." autocomplete="off" style="width: 24em; max-width: 90vw;">
+        <div style="color:red; font-size:1em; min-height:1.4em; height:1.4em;"></div>
       </div>
     </div>
     <div style="display: table-row;">
@@ -71,8 +72,9 @@
   <button id="connectbtn" class="big-btn" disabled>接続</button>
 </form>
 
+
   <div id="status"></div>
-  <script>
+<script>
     let ws = null, pc = null, dataChannel = null;
     let connected = false, connecting = false, padIndex = null;
     let lastPadSelect = 0;
@@ -145,6 +147,24 @@
     window.addEventListener("gamepaddisconnected", refreshPadList);
     document.getElementById("refreshPad").onclick = refreshPadList;
     refreshPadList();
+	
+    // 切断時の共通処理
+    function disconnectCleanup() {
+      if (dataChannel && dataChannel.readyState === "open") try { dataChannel.close(); } catch {}
+      if (pc) try { pc.close(); } catch {}
+      if (ws && ws.readyState <= 1) try { ws.close(); } catch {}
+      dataChannel = null;
+      pc = null;
+      ws = null;
+      connected = false;
+      connecting = false;
+      setFormLock(false);
+      document.getElementById('connectbtn').textContent = '接続';
+      setStatus('切断しました');
+      updatePadIndicator(false);
+      refreshPadList();
+      document.getElementById("vdo-iframe").src = "";
+    }
 
     // wslURLとvdoID自動抽出＋iframe反映
     function updateWSL() {
@@ -173,17 +193,7 @@
     // 接続・切断トグル
     document.getElementById('connectbtn').onclick = () => {
       if (connected || connecting) {
-        // 切断
-        if (dataChannel && dataChannel.readyState === "open") dataChannel.close();
-        if (pc) try { pc.close(); } catch {}
-        if (ws && ws.readyState <= 1) try { ws.close(); } catch {}
-        connected = false; connecting = false;
-        setFormLock(false);
-        document.getElementById('connectbtn').textContent = '接続';
-        setStatus('切断しました');
-        updatePadIndicator(false);
-        refreshPadList();
-        document.getElementById("vdo-iframe").src = "";
+        disconnectCleanup();
         return;
       }
       connecting = true;
@@ -249,22 +259,29 @@
               startSending();
             };
             dataChannel.onclose = () => {
-              setStatus("切断しました");
-              connected = false;
-              connecting = false;
-              setFormLock(false);
-              document.getElementById('connectbtn').textContent = '接続';
-              updatePadIndicator(false);
-              refreshPadList();
+              disconnectCleanup();
             };
             dataChannel.onerror = () => setStatus("DataChannelエラー");
-            dataChannel.onmessage = ev => {  try {
-              const msg = JSON.parse(typeof ev.data === "string" ? ev.data : "");
-              if (msg.type === "ninja_id" && msg.id) {
-                document.getElementById("vdo-iframe").src = "https://vdo.ninja/?view=" + encodeURIComponent(msg.id) + "&nojitter";
-                return;
-              }
-            } catch {}};
+            dataChannel.onmessage = ev => {  
+              try {
+                const msg = JSON.parse(typeof ev.data === "string" ? ev.data : "");
+                // ★ここから追加
+                if (msg.type === "ping" && msg.ts) {
+                  dataChannel.send(JSON.stringify({ type: "pong", ts: msg.ts }));
+                  return;
+                }
+                // ★ここまで追加
+                if (msg.type === "ninja_id" && msg.id) {
+                  document.getElementById("vdo-iframe").src = "https://vdo.ninja/?view=" + encodeURIComponent(msg.id) + "&nojitter";
+                  return;
+                }
+                // disconnectコマンド対応
+                if (msg.type === "disconnect") {
+                  disconnectCleanup();
+                  return;
+                }
+              } catch {}
+            };
           };
           await pc.setRemoteDescription(msg.offer);
           const answer = await pc.createAnswer();
@@ -349,6 +366,7 @@
     // 初期化
     updateWSL();
 
-  </script>
+</script>
+
 </body>
 </html>
