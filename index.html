@@ -17,15 +17,45 @@
     select, input[type=text] { font-size:1.1em; padding:4px 8px; }
     #refreshPad { font-size:0.95em; padding:5px 12px; margin-left:8px; }
     #status { margin-top:24px; }
+    #vdo-wrap {
+      margin: 0 auto 0 auto;
+      width: 100vw;
+      max-width: 100vw;
+      aspect-ratio: 16/9;
+      background: #222;
+      /* border-radius: 16px; 削除 */
+      /* box-shadow: 0 2px 18px #0004; 削除 */
+      overflow: hidden;
+      display: flex; align-items: center; justify-content: center;
+      border: none;
+    }
+    #vdo-iframe {
+      width: 100%; height: 100%; border: none;
+      background: #222;
+      display: block;
+      border-radius: 0 !important;
+    }
+    #infoarea {
+      white-space: pre-line;
+      margin: 16px auto;
+      font-size: 1.2em;
+      color: #333;
+      text-align: center;
+      max-width: 700px;
+      line-height: 1.7;
+    }
   </style>
 </head>
 <body>
   <div id="pad-status">
     <span id="pad-status-indicator"></span>
   </div>
-  <h2>WebRTC ゲームパッドクライアント</h2>
-  <form id="connectform" onsubmit="return false;">
-    <label>名前: <input type="text" id="uname" required></label>
+  <div id="vdo-wrap">
+    <iframe id="vdo-iframe" allow="autoplay; fullscreen" sandbox="allow-scripts allow-same-origin"></iframe>
+  </div>
+    <form id="connectform" onsubmit="return false;">
+    <label>名前: <input type="text" id="uname" required autocomplete="off"></label><br>
+    <label>wslアドレス: <input type="text" id="wsl" placeholder="https://..." autocomplete="off"></label><br>
     <label>使用ゲームパッド: 
       <select id="padSelect"></select>
     </label>
@@ -35,32 +65,37 @@
   </form>
   <div id="status"></div>
   <script>
-    // ---- シグナリングWebSocketはクラウドフレアURLで固定 ----
-    const SIGNAL_SERVER_URL = "wss://supplement-chosen-merge-zum.trycloudflare.com/ws";
     let ws = null, pc = null, dataChannel = null;
     let connected = false, connecting = false, padIndex = null;
+    let lastPadSelect = 0;
+    let padList = [];
+    let wslURL = "";
+    let vdoID = "";
+    let padSelectEl = document.getElementById("padSelect");
 
     function updatePadIndicator(active) {
-      const el = document.getElementById('pad-status-indicator');
-      el.style.background = active ? '#2ecc40' : '#888';
+      document.getElementById('pad-status-indicator').style.background = active ? '#2ecc40' : '#888';
     }
     function setFormLock(isLock) {
       document.getElementById('uname').disabled = isLock;
+      document.getElementById('wsl').disabled = isLock;
       document.getElementById('padSelect').disabled = isLock;
       document.getElementById('refreshPad').disabled = isLock;
     }
     function setStatus(text) { document.getElementById('status').textContent = text; }
     function refreshPadList() {
+      if (connected) return;
+      padList = [];
       const pads = navigator.getGamepads();
-      const sel = document.getElementById('padSelect');
-      sel.innerHTML = "";
+      padSelectEl.innerHTML = "";
       let found = false;
       for (let i = 0; i < pads.length; i++) {
         if (pads[i]) {
           const opt = document.createElement("option");
           opt.value = i;
           opt.textContent = `[${i}] ${pads[i].id}`;
-          sel.appendChild(opt);
+          padSelectEl.appendChild(opt);
+          padList.push(pads[i]);
           found = true;
         }
       }
@@ -68,7 +103,7 @@
         const opt = document.createElement("option");
         opt.value = "";
         opt.textContent = "ゲームパッド未検出";
-        sel.appendChild(opt);
+        padSelectEl.appendChild(opt);
       }
       document.getElementById("connectbtn").disabled = !found;
     }
@@ -77,9 +112,56 @@
     document.getElementById("refreshPad").onclick = refreshPadList;
     refreshPadList();
 
+    // wslURLとvdoID自動抽出＋iframe反映
+    function updateWSL() {
+      let raw = document.getElementById('wsl').value.trim();
+      wslURL = "";
+      vdoID = "";
+      // wsl用: https→wss、/ws追加
+      if (raw.startsWith("http")) {
+        try {
+          let u = new URL(raw);
+          wslURL = "wss://" + u.host + "/ws";
+          // vdo ninja view idはパス末尾または ?view= から抽出
+          vdoID = (u.searchParams.get("view")) || u.pathname.replace(/^\//, "");
+        } catch {}
+      }
+      // iframe更新
+      let vdo = document.getElementById("vdo-iframe");
+      if (vdoID) {
+        vdo.src = "https://vdo.ninja/?view=" + encodeURIComponent(vdoID) + "&nojitter";
+      } else {
+        vdo.src = "";
+      }
+      // 情報欄更新
+      updateInfoArea();
+    }
+    document.getElementById('wsl').addEventListener("input", updateWSL);
+
+    // info欄更新
+    function updateInfoArea() {
+      let name = document.getElementById('uname').value.trim();
+      let wsl = document.getElementById('wsl').value.trim();
+      let padname = padSelectEl.options[padSelectEl.selectedIndex]?.textContent ?? "";
+      document.getElementById("infoarea").textContent = `${name}\n${wsl}\n${padname}`;
+    }
+    document.getElementById('uname').addEventListener("input", updateInfoArea);
+    document.getElementById('wsl').addEventListener("input", updateInfoArea);
+    document.getElementById('padSelect').addEventListener("change", updateInfoArea);
+
+    // 接続・切断トグル
     document.getElementById('connectbtn').onclick = () => {
       if (connected || connecting) {
-        location.reload();
+        // 切断
+        if (dataChannel && dataChannel.readyState === "open") dataChannel.close();
+        if (pc) try { pc.close(); } catch {}
+        if (ws && ws.readyState <= 1) try { ws.close(); } catch {}
+        connected = false; connecting = false;
+        setFormLock(false);
+        document.getElementById('connectbtn').textContent = '接続';
+        setStatus('切断しました');
+        updatePadIndicator(false);
+        refreshPadList();
         return;
       }
       connecting = true;
@@ -102,14 +184,21 @@
             return;
           }
         }
-        if (!found) requestAnimationFrame(loop);
+        if (!found && !connected) requestAnimationFrame(loop);
       }
       loop();
     }
 
     function startWS(pad) {
       const name = document.getElementById('uname').value.trim();
-      ws = new WebSocket(SIGNAL_SERVER_URL); // シグナリングのみ
+      updateWSL();
+      if (!wslURL) {
+        setStatus("wslアドレスを入力してください");
+        setFormLock(false);
+        document.getElementById('connectbtn').textContent = '接続';
+        return;
+      }
+      ws = new WebSocket(wslURL); // シグナリング
       ws.onopen = () => setStatus('シグナリングサーバー接続...');
       ws.onmessage = async (ev) => {
         const msg = JSON.parse(ev.data);
@@ -126,20 +215,23 @@
             dataChannel.onopen = () => {
               connected = true;
               setStatus('P2P接続完了！送信開始');
-              ws.close(); // シグナリングは不要
               setFormLock(true);
+              document.getElementById('connectbtn').textContent = '切断';
+              ws.close(); // シグナリングは不要
               dataChannel.send(JSON.stringify({ type: "hello", name: name, id: pad.id }));
               startSending();
             };
             dataChannel.onclose = () => {
-              setStatus("DataChannel切断");
+              setStatus("切断しました");
               connected = false;
+              connecting = false;
               setFormLock(false);
+              document.getElementById('connectbtn').textContent = '接続';
+              updatePadIndicator(false);
+              refreshPadList();
             };
             dataChannel.onerror = () => setStatus("DataChannelエラー");
-            dataChannel.onmessage = ev => {
-              // サーバーからのレスポンスはここで処理
-            };
+            dataChannel.onmessage = ev => {};
           };
           await pc.setRemoteDescription(msg.offer);
           const answer = await pc.createAnswer();
@@ -147,6 +239,12 @@
           ws.send(JSON.stringify({ type: "answer", answer }));
         } else if (msg.type === "candidate" && pc) {
           await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+        } else if (msg.type === "error") {
+          setStatus("サーバーエラー: " + msg.reason);
+          connecting = false;
+          setFormLock(false);
+          document.getElementById('connectbtn').textContent = '接続';
+          try { ws.close(); } catch {}
         }
       };
       ws.onerror = () => setStatus("シグナリングエラー");
@@ -160,12 +258,11 @@
         if (pad.buttons[i]?.pressed) btnBits |= (1 << i);
       }
       const axes = [];
-for (let i = 0; i < 4; i++) {
-  let v = Math.round((pad.axes[i] ?? 0) * 127.5 + 128);
-  v = Math.max(0, Math.min(255, v));
-  axes.push(v);
-}
-
+      for (let i = 0; i < 4; i++) {
+        let v = Math.round((pad.axes[i] ?? 0) * 127.5 + 128);
+        v = Math.max(0, Math.min(255, v));
+        axes.push(v);
+      }
       let lt = 0, rt = 0;
       if (pad.buttons[6]) lt = Math.round((pad.buttons[6].value ?? 0) * 255);
       else if (pad.axes[4] !== undefined) lt = Math.round(((pad.axes[4] + 1) / 2) * 255);
@@ -216,6 +313,11 @@ for (let i = 0; i < 4; i++) {
       }
       loop();
     }
+
+    // 初期化
+    updateInfoArea();
+    updateWSL();
+
   </script>
 </body>
 </html>
