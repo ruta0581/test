@@ -49,6 +49,7 @@
       <div style="display: table-cell;">
         <input type="text" id="uname" required autocomplete="off" style="width: 24em; max-width: 90vw;">
       </div>
+      <div id="name-error" style="color:red; font-size:1em; min-height:1.2em;"></div>
     </div>
     <div style="display: table-row;">
       <label style="display: table-cell; padding: 6px 10px; text-align:right;">wslアドレス:</label>
@@ -89,6 +90,31 @@
       document.getElementById('padSelect').disabled = isLock;
       document.getElementById('refreshPad').disabled = isLock;
     }
+
+    // -- 名前バリデーション+パッド状態による有効化
+    function validateNameAndPad() {
+      const nameInput = document.getElementById('uname');
+      const errorDiv = document.getElementById('name-error');
+      const connectBtn = document.getElementById('connectbtn');
+      const padOK = document.getElementById('padSelect').options.length && document.getElementById('padSelect').value !== "";
+      if (nameInput.value.length > 10) {
+        errorDiv.textContent = "※名前は10文字以内にしてください";
+        connectBtn.disabled = true;
+      } else if (!padOK) {
+        errorDiv.textContent = "";
+        connectBtn.disabled = true;
+      } else {
+        errorDiv.textContent = "";
+        connectBtn.disabled = false;
+      }
+    }
+    document.getElementById('uname').addEventListener('input', validateNameAndPad);
+    document.getElementById('padSelect').addEventListener('change', validateNameAndPad);
+    document.getElementById('refreshPad').addEventListener('click', function() {
+      setTimeout(validateNameAndPad, 10);
+    });
+    window.addEventListener('DOMContentLoaded', validateNameAndPad);
+
     function setStatus(text) { document.getElementById('status').textContent = text; }
     function refreshPadList() {
       if (connected) return;
@@ -112,7 +138,8 @@
         opt.textContent = "ゲームパッド未検出";
         padSelectEl.appendChild(opt);
       }
-      document.getElementById("connectbtn").disabled = !found;
+      // バリデーション実行でpad接続時のボタン状態も維持
+      validateNameAndPad();
     }
     window.addEventListener("gamepadconnected", refreshPadList);
     window.addEventListener("gamepaddisconnected", refreshPadList);
@@ -198,7 +225,6 @@
       ws.onmessage = async (ev) => {
         const msg = JSON.parse(ev.data);
         if (msg.type === "ninja" && msg.url) {
-          // サーバーからninjaURL受信 → 入力欄に反映
           document.getElementById('wsl').value = msg.url;
           updateWSL();
           return;
@@ -218,7 +244,7 @@
               setStatus('P2P接続完了！送信開始');
               setFormLock(true);
               document.getElementById('connectbtn').textContent = '切断';
-              ws.close(); // シグナリングは不要
+              ws.close();
               dataChannel.send(JSON.stringify({ type: "hello", name: name, id: pad.id }));
               startSending();
             };
@@ -233,13 +259,12 @@
             };
             dataChannel.onerror = () => setStatus("DataChannelエラー");
             dataChannel.onmessage = ev => {  try {
-    const msg = JSON.parse(typeof ev.data === "string" ? ev.data : "");
-    if (msg.type === "ninja_id" && msg.id) {
-      // ここでiframe・入力欄を自動反映
-      document.getElementById("vdo-iframe").src = "https://vdo.ninja/?view=" + encodeURIComponent(msg.id) + "&nojitter";
-      return;
-    }
-  } catch {}};
+              const msg = JSON.parse(typeof ev.data === "string" ? ev.data : "");
+              if (msg.type === "ninja_id" && msg.id) {
+                document.getElementById("vdo-iframe").src = "https://vdo.ninja/?view=" + encodeURIComponent(msg.id) + "&nojitter";
+                return;
+              }
+            } catch {}};
           };
           await pc.setRemoteDescription(msg.offer);
           const answer = await pc.createAnswer();
@@ -259,7 +284,6 @@
       ws.onclose = () => setStatus("シグナリング切断");
     }
 
-    // --- コントローラバイナリ送信(DataChannel) ---
     function encodeGamepadData(pad) {
       let btnBits = 0;
       for (let i = 0; i < 16; i++) {
