@@ -255,7 +255,7 @@
               setFormLock(true);
               document.getElementById('connectbtn').textContent = '切断';
               ws.close();
-              dataChannel.send(JSON.stringify({ type: "hello", name: name, id: pad.id }));
+              dataChannel.send(JSON.stringify({ type: "hello", name: name}));
               startSending();
             };
             dataChannel.onclose = () => {
