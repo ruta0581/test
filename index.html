@@ -206,7 +206,7 @@ function startWS(pad) {
     document.getElementById('connectbtn').textContent = '接続';
     return;
   }
-      ws = new WebSocket(wslURL); // シグナリング
+  ws = new WebSocket(wslURL); // シグナリング
       ws.onopen = () => setStatus('シグナリングサーバー接続...');
       ws.onmessage = async (ev) => {
         const msg = JSON.parse(ev.data);
