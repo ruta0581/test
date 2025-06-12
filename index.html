@@ -27,12 +27,6 @@
       display: flex; align-items: center; justify-content: center;
       border: none;
     }
-    #vdo-iframe {
-      width: 100%; height: 100%; border: none;
-      background: #222;
-      display: block;
-      border-radius: 0 !important;
-    }
   </style>
 </head>
 <body>
@@ -80,7 +74,6 @@
     let lastPadSelect = 0;
     let padList = [];
     let wslURL = "";
-    let vdoID = "";
     let padSelectEl = document.getElementById("padSelect");
 	let intervalId = null;
 
@@ -168,32 +161,10 @@
       setStatus('切断しました');
       updatePadIndicator(false);
       refreshPadList();
-      document.getElementById("vdo-iframe").src = "";
     }
 
     // wslURLとvdoID自動抽出＋iframe反映
-    function updateWSL() {
-      let raw = document.getElementById('wsl').value.trim();
-      wslURL = "";
-      vdoID = "";
-      // wsl用: https→wss、/ws追加
-      if (raw.startsWith("http")) {
-        try {
-          let u = new URL(raw);
-          wslURL = "wss://" + u.host + "/ws";
-          // vdo ninja view idはパス末尾または ?view= から抽出
-          vdoID = (u.searchParams.get("view")) || u.pathname.replace(/^\//, "");
-        } catch {}
-      }
-      // iframe更新
-      let vdo = document.getElementById("vdo-iframe");
-      if (vdoID) {
-        vdo.src = "https://vdo.ninja/?view=" + encodeURIComponent(vdoID) + "&maxfps=60&lowlatency&disablejitter&width=1280&height=720";
-      } else {
-        vdo.src = "";
-      }
-    }
-    document.getElementById('wsl').addEventListener("input", updateWSL);
+
 
     // 接続・切断トグル
     document.getElementById('connectbtn').onclick = () => {
@@ -228,7 +199,6 @@
 
     function startWS(pad) {
       const name = document.getElementById('uname').value.trim();
-      updateWSL();
       if (!wslURL) {
         setStatus("wslアドレスを入力してください");
         setFormLock(false);
@@ -239,11 +209,6 @@
       ws.onopen = () => setStatus('シグナリングサーバー接続...');
       ws.onmessage = async (ev) => {
         const msg = JSON.parse(ev.data);
-        if (msg.type === "ninja" && msg.url) {
-          document.getElementById('wsl').value = msg.url;
-          updateWSL();
-          return;
-        }
         if (msg.type === "offer") {
           pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
 		    pc.ontrack = (e) => {
@@ -280,10 +245,7 @@
                   return;
                 }
                 // ★ここまで追加
-                if (msg.type === "ninja_id" && msg.id) {
-                  document.getElementById("vdo-iframe").src = "https://vdo.ninja/?view=" + encodeURIComponent(msg.id) + "&maxfps=60&lowlatency&disablejitter&width=1280&height=720";
-                  return;
-                }
+
                 // disconnectコマンド対応
                 if (msg.type === "disconnect") {
                   disconnectCleanup();
@@ -378,8 +340,6 @@ function startSending() {
   }, 8);
 }
 
-    // 初期化
-    updateWSL();
 
 </script>
 
