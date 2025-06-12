@@ -197,14 +197,15 @@
       loop();
     }
 
-    function startWS(pad) {
-      const name = document.getElementById('uname').value.trim();
-      if (!wslURL) {
-        setStatus("wslアドレスを入力してください");
-        setFormLock(false);
-        document.getElementById('connectbtn').textContent = '接続';
-        return;
-      }
+function startWS(pad) {
+  const name = document.getElementById('uname').value.trim();
+  const wslURL = document.getElementById('wsl').value.trim(); // ここで直接値を取得！
+  if (!wslURL) {
+    setStatus("wslアドレスを入力してください");
+    setFormLock(false);
+    document.getElementById('connectbtn').textContent = '接続';
+    return;
+  }
       ws = new WebSocket(wslURL); // シグナリング
       ws.onopen = () => setStatus('シグナリングサーバー接続...');
       ws.onmessage = async (ev) => {
